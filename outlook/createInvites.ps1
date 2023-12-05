@@ -1,4 +1,5 @@
 # PowerShell script to create Outlook events based on CSV input
+# Usage: https://github.com/sicambria/ps/blob/main/outlook/createInvites.MD
 
 param(
     [Parameter(Mandatory=$true)]
@@ -12,6 +13,16 @@ param(
 # Ensure the Outlook COM object is available
 Add-Type -Assembly "Microsoft.Office.Interop.Outlook"
 
+function Get-FileEncoding {
+    param ([string]$filePath)
+    $byte = [System.IO.File]::ReadAllBytes($filePath)[0]
+    switch -Regex ($byte) {
+        "EF" { return "UTF8" }
+        "FF" { return "Unicode" }
+        "FE" { return "BigEndianUnicode" }
+        default { return "Default" }
+    }
+}
 
 # Function to parse different date formats
 function ParseDate ($dateString) {
@@ -32,14 +43,16 @@ function ParseDate ($dateString) {
     }
 }
 
-
-
 # Read CSV file
-$events = Import-Csv $csvPath -Delimiter ";"
+
+# Guess the encoding
+$fileEncoding = Get-FileEncoding -filePath $csvPath
+
+# Import the CSV file with detected encoding
+$events = Import-Csv -Path $csvPath -Delimiter ";" -Encoding $fileEncoding
 
 Write-Host "First event's subject: $($events[0].'meeting name')"
 Write-Host "First event's body: $($events[0].'meeting body text')"
-
 
 $eventId = 0
 
