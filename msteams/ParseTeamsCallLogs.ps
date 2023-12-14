@@ -17,6 +17,7 @@ function DetectDelimiter($filePath) {
 $globalParticipantMinutes = @{}
 # Initialize a hash set to store unique meeting dates
 $meetingDates = New-Object System.Collections.Generic.HashSet[string]
+$participantDaysPresent = @{}
 
 # Function to convert time string to total minutes
 function ConvertToMinutes($timeString) {
@@ -92,6 +93,7 @@ Get-ChildItem $csvDirectory -Filter *.csv | ForEach-Object {
                 if (-not $fileParticipantMinutes.ContainsKey($name)) {
                     $time = ConvertToMinutes $timeString
                     $fileParticipantMinutes[$name] = $time
+                    $participantDaysPresent[$name] = $participantDaysPresent[$name] + 1
                     if ($CSVToConsole) {
                         Write-Output "$date,$name,$time"
                     }
@@ -113,6 +115,7 @@ Get-ChildItem $csvDirectory -Filter *.csv | ForEach-Object {
     }
 }
 
+$totalDays = $meetingDates.Count
 if (-not $CSVToConsole) {
     # Output the total time for each participant, rounded to the nearest whole minute and sorted
     Write-Host "Finalizing and displaying results..."
@@ -121,7 +124,8 @@ if (-not $CSVToConsole) {
         $totalMinutes = [math]::Round($participant.Value)
         $hours = [math]::Floor($totalMinutes / 60)
         $minutes = $totalMinutes % 60
-        Write-Host "$($participant.Name) spent a total of $hours hours and $minutes minutes"
+                $attendancePercentage = [math]::Round(($participantDaysPresent[$participant.Name] / $totalDays) * 100, 2)
+        Write-Host "$($participant.Name) attended $attendancePercentage% of meetings and spent a total of $hours hours and $minutes minutes"
     }
 
 
