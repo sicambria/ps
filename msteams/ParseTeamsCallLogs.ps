@@ -1,0 +1,137 @@
+# PowerShell Script to Summarize Overall Attendance Time from MS Teams Call Logs
+
+param(
+    [string]$csvDirectory = (Get-Location).Path, # <String> (Optional) The directory path where the CSV files are located.
+    [switch]$listDates = $true, # (Optional) If specified, the script will list the dates of the meetings considered in the calculation.
+    [switch]$CSVToConsole # (Optional) If specified, the script outputs the data in CSV format to the console, displaying the date, name, and time for each participant. This mode suppresses verbose logging.
+)
+
+# Function to detect the delimiter in a CSV file
+function DetectDelimiter($filePath) {
+    $line = Get-Content $filePath -TotalCount 10 | Out-String
+    $commonDelimiter = $line | Select-String -Pattern "\t|,|;" -AllMatches | ForEach-Object { $_.Matches } | Group-Object Value | Sort-Object Count -Descending | Select-Object -First 1 -ExpandProperty Name
+    return $commonDelimiter
+}
+
+# Initialize a hash table to store total minutes per participant across all files
+$globalParticipantMinutes = @{}
+# Initialize a hash set to store unique meeting dates
+$meetingDates = New-Object System.Collections.Generic.HashSet[string]
+
+# Function to convert time string to total minutes
+function ConvertToMinutes($timeString) {
+    $totalMinutes = 0
+    if ($timeString -match '(\d+) p') {
+        $totalMinutes += [int]$matches[1]
+    }
+    if ($timeString -match '(\d+) mp') {
+        $totalMinutes += [int]$matches[1] / 60
+    }
+    return $totalMinutes
+}
+
+# Function to extract and format the date from a filename
+function ExtractDateFromFilename($filename) {
+    if ($filename -match '(\d+)-(\d+)-(\d+)(?=\D|\z)') {
+        try {
+            # Parse the date assuming format M-d-yy
+            $parsedDate = [datetime]::ParseExact("$($matches[1])-$($matches[2])-$($matches[3])", 'M-d-yy', $null)
+            return $parsedDate.ToString('yyyy-MM-dd')
+        } catch {
+            Write-Host "Error parsing date from filename: $filename"
+        }
+    }
+}
+
+# Skip verbose logging and additional processing if CSVToConsole is specified
+if (-not $CSVToConsole) {
+    Write-Host "Starting script..."
+    Write-Host "Target CSV Directory: $csvDirectory"
+}
+
+# Process each CSV file in the directory
+Get-ChildItem $csvDirectory -Filter *.csv | ForEach-Object {
+    $csvPath = $_.FullName
+    $date = ExtractDateFromFilename $_.Name
+    if (-not $CSVToConsole) {
+        Write-Host "Processing file: $csvPath"
+    }
+
+    # Extract and store meeting date
+    if ($date -and ($listDates -or $CSVToConsole)) {
+        $meetingDates.Add($date) | Out-Null
+    }
+
+    # Reset participant minutes for each file
+    $fileParticipantMinutes = @{}
+
+    try {
+        $delimiter = DetectDelimiter $csvPath
+
+        $data = Get-Content $csvPath
+        $startProcessing = $false
+
+        foreach ($line in $data) {
+            if ($line -match "Név$delimiter") {
+                $startProcessing = $true
+                continue
+            }
+            if ($startProcessing -and $line -match "^$delimiter") {
+                break
+            }
+            if ($startProcessing -and $line -match ".+") {
+                $columns = $line -split $delimiter
+                if ($columns.Length -lt 4 -or [string]::IsNullOrWhiteSpace($columns[0])) {
+                    continue
+                }
+
+                $name = $columns[0]
+                $timeString = $columns[3]
+                
+                # Check if the participant has already been processed in this file
+                if (-not $fileParticipantMinutes.ContainsKey($name)) {
+                    $time = ConvertToMinutes $timeString
+                    $fileParticipantMinutes[$name] = $time
+                    if ($CSVToConsole) {
+                        Write-Output "$date,$name,$time"
+                    }
+                }
+            }
+        }
+
+        # Add the time from this file to the global total
+        if (-not $CSVToConsole) {
+            $fileParticipantMinutes.Keys | ForEach-Object {
+                $globalParticipantMinutes[$_] += $fileParticipantMinutes[$_]
+            }
+        }
+
+    } catch {
+        if (-not $CSVToConsole) {
+            Write-Host "Error processing file: $_"
+        }
+    }
+}
+
+if (-not $CSVToConsole) {
+    # Output the total time for each participant, rounded to the nearest whole minute and sorted
+    Write-Host "Finalizing and displaying results..."
+    $sortedParticipants = $globalParticipantMinutes.GetEnumerator() | Sort-Object Value
+    foreach ($participant in $sortedParticipants) {
+        $totalMinutes = [math]::Round($participant.Value)
+        $hours = [math]::Floor($totalMinutes / 60)
+        $minutes = $totalMinutes % 60
+        Write-Host "$($participant.Name) spent a total of $hours hours and $minutes minutes"
+    }
+
+
+    Write-Host ""
+
+    # Display meeting dates if the -listDates parameter is used
+    if ($listDates) {
+        Write-Host "The calculated times took into consideration the following meeting dates:"
+        $meetingDates | Sort-Object | ForEach-Object { Write-Host $_ }
+    }
+
+    Write-Host "Script execution complete."
+}
