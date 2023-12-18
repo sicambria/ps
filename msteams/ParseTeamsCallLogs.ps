@@ -22,6 +22,9 @@ $participantDaysPresent = @{}
 # Function to convert time string to total minutes
 function ConvertToMinutes($timeString) {
     $totalMinutes = 0
+    if ($timeString -match '(\d+) ó') {
+        $totalMinutes += [int]$matches[1] * 60
+    }
     if ($timeString -match '(\d+) p') {
         $totalMinutes += [int]$matches[1]
     }
@@ -30,6 +33,7 @@ function ConvertToMinutes($timeString) {
     }
     return $totalMinutes
 }
+
 
 # Function to extract and format the date from a filename
 function ExtractDateFromFilename($filename) {
@@ -49,6 +53,10 @@ if (-not $CSVToConsole) {
     Write-Host "Starting script..."
     Write-Host "Target CSV Directory: $csvDirectory"
 }
+
+  if ($CSVToConsole) {
+            Write-Output "date,name,minutesAttended"
+        }
 
 # Process each CSV file in the directory
 Get-ChildItem $csvDirectory -Filter *.csv | ForEach-Object {
@@ -70,7 +78,7 @@ Get-ChildItem $csvDirectory -Filter *.csv | ForEach-Object {
         $delimiter = DetectDelimiter $csvPath
 
         $data = Get-Content $csvPath
-        $startProcessing = $false
+        $startProcessing = $false      
 
         foreach ($line in $data) {
             if ($line -match "Név$delimiter") {
@@ -93,9 +101,16 @@ Get-ChildItem $csvDirectory -Filter *.csv | ForEach-Object {
                 if (-not $fileParticipantMinutes.ContainsKey($name)) {
                     $time = ConvertToMinutes $timeString
                     $fileParticipantMinutes[$name] = $time
-                    $participantDaysPresent[$name] = $participantDaysPresent[$name] + 1
+
+                    if (-not $participantDaysPresent.ContainsKey($name)) {
+                    $participantDaysPresent[$name] = New-Object System.Collections.Generic.HashSet[string]
+                    }
+                    $participantDaysPresent[$name].Add($date) | Out-Null
+
                     if ($CSVToConsole) {
-                        Write-Output "$date,$name,$time"
+                    $roundedTime = [math]::Round(($time), 0)
+                    $nameWithSemicolon = $name -replace ",", ";"
+                    Write-Output "$date,$nameWithSemicolon,$roundedTime"
                     }
                 }
             }
@@ -116,26 +131,34 @@ Get-ChildItem $csvDirectory -Filter *.csv | ForEach-Object {
 }
 
 $totalDays = $meetingDates.Count
+if ($totalDays -eq 0) {
+    Write-Host "No meeting dates found. Exiting script."
+    exit
+}
+
 if (-not $CSVToConsole) {
     # Output the total time for each participant, rounded to the nearest whole minute and sorted
+    Write-Host ""
     Write-Host "Finalizing and displaying results..."
     $sortedParticipants = $globalParticipantMinutes.GetEnumerator() | Sort-Object Value
     foreach ($participant in $sortedParticipants) {
         $totalMinutes = [math]::Round($participant.Value)
         $hours = [math]::Floor($totalMinutes / 60)
         $minutes = $totalMinutes % 60
-                $attendancePercentage = [math]::Round(($participantDaysPresent[$participant.Name] / $totalDays) * 100, 2)
+                $uniqueDaysAttended = $participantDaysPresent[$participant.Name].Count
+                $attendancePercentage = [math]::Round(($uniqueDaysAttended / $totalDays) * 100, 2)
+
         Write-Host "$($participant.Name) attended $attendancePercentage% of meetings and spent a total of $hours hours and $minutes minutes"
     }
 
-
-    Write-Host ""
-
+        
     # Display meeting dates if the -listDates parameter is used
+    Write-Host ""
     if ($listDates) {
-        Write-Host "The calculated times took into consideration the following meeting dates:"
+        Write-Host "The calculated times took into consideration the following meeting dates (Year-Month-Day):"
         $meetingDates | Sort-Object | ForEach-Object { Write-Host $_ }
     }
 
+    Write-Host ""
     Write-Host "Script execution complete."
 }
