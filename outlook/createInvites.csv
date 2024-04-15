@@ -1,0 +1,4 @@
+meeting name;meeting body text;required invitees;optional invitees;date;time of start;time of ending
+title 1;INSERT_INVITE_BODY_TEXT_HERE;"email@email.org;email1@email.org;email2@email.org";;2024.03.01;9:30:00;11:30:00
+title 2;INSERT_INVITE_BODY_TEXT_HERE;"email@email.org;email1@email.org;email2@email.org";;2024.03.02;9:30:00;11:30:00
+title 3;INSERT_INVITE_BODY_TEXT_HERE;"email@email.org;email1@email.org;email2@email.org";;2024.03.03;13:00:00;15:00:00
